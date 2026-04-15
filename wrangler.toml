@@ -1,0 +1,9 @@
+name = "opengolfapi-api"
+main = "src/index.ts"
+compatibility_date = "2026-04-15"
+
+# Custom domain is wired up separately in the Cloudflare dashboard:
+#   Workers & Pages → opengolfapi-api → Settings → Triggers → Custom domains
+#   → api.opengolfapi.org
+
+# Set secrets via: wrangler secret put SUPABASE_URL / SUPABASE_ANON_KEY
