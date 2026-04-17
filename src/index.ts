@@ -121,4 +121,52 @@ app.get('/v1/courses/:id/nearby', async c => {
   return c.json({ nearby: data });
 });
 
+app.post('/v1/courses/submit', async c => {
+  const body = await c.req.json();
+  const sb = client(c.env);
+
+  // Accept single object or array
+  const submissions = Array.isArray(body) ? body : [body];
+
+  if (submissions.length > 100) {
+    return c.json({ error: 'Max 100 courses per request' }, 400);
+  }
+
+  const results = [];
+  for (const s of submissions) {
+    if (!s.course_name || !s.submitter_email) {
+      results.push({ error: 'course_name and submitter_email required', course_name: s.course_name });
+      continue;
+    }
+    const { data, error } = await sb.rpc('rpc_submit_course', {
+      p_course_name: s.course_name,
+      p_city: s.city || null,
+      p_state: s.state || null,
+      p_country: s.country || 'US',
+      p_address: s.address || null,
+      p_postal_code: s.postal_code || null,
+      p_latitude: s.latitude || null,
+      p_longitude: s.longitude || null,
+      p_phone: s.phone || null,
+      p_website: s.website || null,
+      p_email: s.email || null,
+      p_course_type: s.course_type || null,
+      p_par_total: s.par_total || null,
+      p_holes: s.holes || null,
+      p_year_built: s.year_built || null,
+      p_architect: s.architect || null,
+      p_description: s.description || null,
+      p_submitter_email: s.submitter_email,
+      p_submitter_name: s.submitter_name || null,
+    });
+    results.push(data || { error: error?.message });
+  }
+
+  return c.json({
+    submitted: results.filter((r: { success?: boolean; error?: string }) => r.success).length,
+    errors: results.filter((r: { success?: boolean; error?: string }) => r.error).length,
+    results,
+  });
+});
+
 export default app;
