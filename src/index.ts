@@ -9,6 +9,7 @@ interface Env {
 
 const app = new Hono<{ Bindings: Env }>();
 
+// CORS: * is intentional — this is a public open API, no auth cookies
 app.use('*', cors({ origin: '*', maxAge: 3600 }));
 
 app.get('/', c => c.json({
