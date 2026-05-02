@@ -1,16 +1,23 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { createClient } from '@supabase/supabase-js';
+import { keyAuth, type KeyAuthVariables } from './middleware/key-auth';
+import { rateLimit } from './middleware/rate-limit';
 
 interface Env {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
 }
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env; Variables: KeyAuthVariables }>();
 
 // CORS: * is intentional — this is a public open API, no auth cookies
 app.use('*', cors({ origin: '*', maxAge: 3600 }));
+
+// Optional Bearer-token auth: anonymous requests still pass through.
+// Must run BEFORE the rate limiter so it can read the resolved apiKey.
+app.use('*', keyAuth());
+app.use('*', rateLimit());
 
 app.get('/', c => c.json({
   name: 'OpenGolfAPI',
