@@ -21,8 +21,8 @@ app.use('*', rateLimit());
 
 app.get('/', c => c.json({
   name: 'OpenGolfAPI',
-  version: '2.0.0',
-  courses: 16908,
+  version: '2.0.1',
+  courses: 14708,
   license: 'ODbL-1.0',
   docs: 'https://opengolfapi.org',
   endpoints: [
@@ -35,6 +35,13 @@ app.get('/', c => c.json({
     'GET /v1/courses/state/:code',
   ],
   donate: 'https://opencollective.com/opengolfapi',
+  api_keys: 'https://courses.opengolfapi.org/api-keys',
+  pricing: 'https://courses.opengolfapi.org/pricing',
+  developers: {
+    message: 'Building something on top of OpenGolfAPI? We want to know about it. Tell us what you\'re working on, what data you wish we had, and where the API falls short.',
+    contact: 'hello@opengolfapi.org',
+    github: 'https://github.com/opengolfapi',
+  },
 }));
 
 function client(env: Env) {
