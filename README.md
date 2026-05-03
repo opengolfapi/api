@@ -55,6 +55,26 @@ wrangler secret put SUPABASE_URL
 wrangler secret put SUPABASE_ANON_KEY
 ```
 
+## Monitoring
+
+Errors and traces can optionally be forwarded to [Sentry](https://sentry.io)
+via `@sentry/cloudflare`. The integration is fully opt-in: when `SENTRY_DSN` is
+unset the Sentry SDK is disabled and incurs no overhead.
+
+To enable, create a Cloudflare Workers project in your Sentry dashboard, copy
+its DSN, and set it as a Worker secret:
+
+```bash
+wrangler secret put SENTRY_DSN
+# paste DSN like https://<key>@o<org>.ingest.sentry.io/<project>
+```
+
+Defaults configured in `src/index.ts`:
+
+- `tracesSampleRate: 0.1` — 10% of requests get a transaction span
+- `release: opengolfapi-api@2.0.1`
+- Uncaught route errors are tagged with `route` + `method` before re-throwing
+
 ## License
 
 MIT
