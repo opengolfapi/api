@@ -1,6 +1,7 @@
 name = "opengolfapi-api"
 main = "src/index.ts"
 compatibility_date = "2026-04-15"
+compatibility_flags = ["nodejs_compat"]
 
 # Custom domain is wired up separately in the Cloudflare dashboard:
 #   Workers & Pages → opengolfapi-api → Settings → Triggers → Custom domains
