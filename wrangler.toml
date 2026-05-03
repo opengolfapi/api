@@ -6,4 +6,11 @@ compatibility_date = "2026-04-15"
 #   Workers & Pages → opengolfapi-api → Settings → Triggers → Custom domains
 #   → api.opengolfapi.org
 
-# Set secrets via: wrangler secret put SUPABASE_URL / SUPABASE_ANON_KEY
+# Set secrets via:
+#   wrangler secret put SUPABASE_URL
+#   wrangler secret put SUPABASE_ANON_KEY
+#
+# Optional — error tracking (no-op if unset):
+#   wrangler secret put SENTRY_DSN
+# DSN format: https://<publicKey>@o<orgId>.ingest.sentry.io/<projectId>
+# Get one from https://sentry.io → Settings → Projects → <project> → Client Keys (DSN).

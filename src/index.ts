@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/cloudflare';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { createClient } from '@supabase/supabase-js';
@@ -7,6 +8,9 @@ import { rateLimit } from './middleware/rate-limit';
 interface Env {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
+  // Optional. When unset, Sentry stays disabled and is a no-op.
+  // Set via: wrangler secret put SENTRY_DSN
+  SENTRY_DSN?: string;
 }
 
 const app = new Hono<{ Bindings: Env; Variables: KeyAuthVariables }>();
@@ -184,4 +188,28 @@ app.post('/v1/courses/submit', async c => {
   });
 });
 
-export default app;
+// Top-level error handler. Forwards uncaught errors to Sentry (when DSN is
+// configured) and re-throws so Cloudflare returns the standard 500 response.
+// Sentry.withSentry below also captures unhandled exceptions automatically,
+// but Hono's onError lets us tag the request context first.
+app.onError((err, c) => {
+  Sentry.captureException(err, {
+    tags: {
+      route: c.req.path,
+      method: c.req.method,
+    },
+  });
+  return c.json({ error: 'Internal Server Error' }, 500);
+});
+
+// Wrap the Hono app so every fetch is traced and errors are forwarded
+// to Sentry. When SENTRY_DSN is unset, `enabled: false` makes the SDK a no-op.
+export default Sentry.withSentry(
+  (env: Env) => ({
+    dsn: env.SENTRY_DSN,
+    tracesSampleRate: 0.1,
+    enabled: !!env.SENTRY_DSN,
+    release: 'opengolfapi-api@2.0.1',
+  }),
+  app,
+);
