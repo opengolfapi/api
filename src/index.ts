@@ -5,12 +5,16 @@ import { createClient } from '@supabase/supabase-js';
 import { keyAuth, type KeyAuthVariables } from './middleware/key-auth';
 import { rateLimit } from './middleware/rate-limit';
 
+export { RateLimitCounter } from './middleware/rate-limit-do';
+
 interface Env {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
   // Optional. When unset, Sentry stays disabled and is a no-op.
   // Set via: wrangler secret put SENTRY_DSN
   SENTRY_DSN?: string;
+  // Durable Object namespace (declared in wrangler.toml as RATE_LIMIT_DO)
+  RATE_LIMIT_DO: DurableObjectNamespace;
 }
 
 const app = new Hono<{ Bindings: Env; Variables: KeyAuthVariables }>();

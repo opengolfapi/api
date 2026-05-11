@@ -4,41 +4,16 @@ import type { ApiKey, KeyAuthEnv, KeyAuthVariables } from './key-auth';
 
 const ANON_DAILY_LIMIT = 1000;
 
-interface Bucket {
-  day: string; // UTC YYYY-MM-DD
-  count: number;
+// Durable Object binding type (env var name `RATE_LIMIT_DO`).
+// Each DO id corresponds to a unique counter key — `key:<api_key_id>` for
+// authenticated, `ip:<client_ip>` for anonymous. DO state is global, so this
+// fixes the per-isolate bypass the May 2026 audit flagged.
+export interface RateLimitEnv extends KeyAuthEnv {
+  RATE_LIMIT_DO: DurableObjectNamespace;
 }
-
-/**
- * In-memory counter, keyed by `apiKey.id` (when authenticated) or the
- * client IP (anonymous). Resets at 00:00 UTC by comparing the current UTC
- * date string against the bucket's `day`.
- *
- * NOTE: Cloudflare Workers run many isolates, so this is per-isolate and
- * therefore approximate. See README "Rate limit storage" caveat. If we ever
- * need exact global limits we'll move this to Workers KV or a Durable Object.
- */
-const buckets = new Map<string, Bucket>();
 
 function utcDay(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-function bumpAndCheck(key: string, limit: number): { allowed: boolean; count: number; resetAt: string } {
-  const day = utcDay();
-  const existing = buckets.get(key);
-  let bucket: Bucket;
-  if (!existing || existing.day !== day) {
-    bucket = { day, count: 0 };
-    buckets.set(key, bucket);
-  } else {
-    bucket = existing;
-  }
-  if (bucket.count >= limit) {
-    return { allowed: false, count: bucket.count, resetAt: nextResetIso() };
-  }
-  bucket.count += 1;
-  return { allowed: true, count: bucket.count, resetAt: nextResetIso() };
 }
 
 function nextResetIso(): string {
@@ -55,16 +30,34 @@ function clientIp(c: Parameters<MiddlewareHandler>[0]): string {
   );
 }
 
+async function bumpAndCheckDO(
+  ns: DurableObjectNamespace,
+  counterKey: string,
+  limit: number,
+): Promise<{ allowed: boolean; count: number; resetAt: string }> {
+  // idFromName is a deterministic hash → same logical counter always lands on
+  // the same DO instance, so all isolates serialize through it.
+  const id = ns.idFromName(`${utcDay()}:${counterKey}`);
+  const stub = ns.get(id) as unknown as {
+    bumpAndCheck: (limit: number) => Promise<{ allowed: boolean; count: number }>;
+  };
+  const { allowed, count } = await stub.bumpAndCheck(limit);
+  return { allowed, count, resetAt: nextResetIso() };
+}
+
 /**
  * Tier-aware rate limiter:
  * - If `c.get('apiKey')` is set → uses `apiKey.dailyLimit`, keyed on `apiKey.id`.
  * - Otherwise → 1000/day per IP.
  *
- * On every successful (non-rate-limited) authenticated request, fires
- * `rpc_record_api_key_hit` fire-and-forget via `c.executionCtx.waitUntil`.
+ * Counters live in Durable Objects (binding RATE_LIMIT_DO). Globally
+ * consistent across all isolates and regions.
+ *
+ * On every successful authenticated request, fires `rpc_record_api_key_hit`
+ * fire-and-forget via `c.executionCtx.waitUntil`.
  */
 export function rateLimit(): MiddlewareHandler<{
-  Bindings: KeyAuthEnv;
+  Bindings: RateLimitEnv;
   Variables: KeyAuthVariables;
 }> {
   return async (c, next) => {
@@ -80,18 +73,27 @@ export function rateLimit(): MiddlewareHandler<{
       limit = ANON_DAILY_LIMIT;
     }
 
-    const { allowed, count, resetAt } = bumpAndCheck(counterKey, limit);
+    let result: { allowed: boolean; count: number; resetAt: string };
+    try {
+      result = await bumpAndCheckDO(c.env.RATE_LIMIT_DO, counterKey, limit);
+    } catch (e) {
+      // Fail open if DO is unreachable. Production path: we'd rather serve a
+      // request than reject everyone if our own infra blips. Sentry will
+      // capture this via the global onError handler.
+      console.error('rate-limit DO failed', e);
+      result = { allowed: true, count: 0, resetAt: nextResetIso() };
+    }
 
     c.header('X-RateLimit-Limit', String(limit));
-    c.header('X-RateLimit-Remaining', String(Math.max(0, limit - count)));
-    c.header('X-RateLimit-Reset', resetAt);
+    c.header('X-RateLimit-Remaining', String(Math.max(0, limit - result.count)));
+    c.header('X-RateLimit-Reset', result.resetAt);
 
-    if (!allowed) {
+    if (!result.allowed) {
       return c.json(
         {
           error: 'Daily rate limit exceeded',
           limit,
-          resetAt,
+          resetAt: result.resetAt,
           upgrade: apiKey ? null : 'https://courses.opengolfapi.org/api-keys',
         },
         429,
@@ -110,7 +112,6 @@ export function rateLimit(): MiddlewareHandler<{
           // fire-and-forget: never block the response
         }
       })();
-      // Workers: keep the request alive long enough for the RPC to land
       c.executionCtx?.waitUntil?.(recordHit);
     }
 

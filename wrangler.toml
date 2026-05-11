@@ -3,6 +3,19 @@ main = "src/index.ts"
 compatibility_date = "2026-04-15"
 compatibility_flags = ["nodejs_compat"]
 
+# Durable Object: rate-limit counters. One DO instance per logical counter
+# (key:<api_key_id> or ip:<client_ip>), giving us strict-serializable counts
+# across all isolates/regions. Replaces the per-isolate Map that the May 2026
+# hostile-CTO audit flagged as bypassable.
+[[durable_objects.bindings]]
+name = "RATE_LIMIT_DO"
+class_name = "RateLimitCounter"
+
+# DO migration history. Each new class needs a v1 entry.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RateLimitCounter"]
+
 # Custom domain is wired up separately in the Cloudflare dashboard:
 #   Workers & Pages → opengolfapi-api → Settings → Triggers → Custom domains
 #   → api.opengolfapi.org
@@ -10,8 +23,4 @@ compatibility_flags = ["nodejs_compat"]
 # Set secrets via:
 #   wrangler secret put SUPABASE_URL
 #   wrangler secret put SUPABASE_ANON_KEY
-#
-# Optional — error tracking (no-op if unset):
-#   wrangler secret put SENTRY_DSN
-# DSN format: https://<publicKey>@o<orgId>.ingest.sentry.io/<projectId>
-# Get one from https://sentry.io → Settings → Projects → <project> → Client Keys (DSN).
+#   wrangler secret put SENTRY_DSN  (optional)
