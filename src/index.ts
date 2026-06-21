@@ -112,9 +112,13 @@ app.get('/v1/courses/:id/tees', async c => {
 
 app.get('/v1/courses/:id/holes', async c => {
   const sb = client(c.env);
+  // FACTS ONLY (2026-06-21): derived per-hole geometry (routing, green front/center/back,
+  // fairway/green polygons, elevation, plays-like, dogleg, landing, tee coords, hazard
+  // carries) is gated out until accuracy is validated vs GolfViz + paid-tier metering is
+  // built. select('*') was leaking the entire paid OpenGolfGeo layer for free.
   const { data, error } = await sb
     .from('golf_course_holes')
-    .select('*')
+    .select('hole_number, par, handicap_index, yardages, meters')
     .eq('course_id', c.req.param('id'))
     .order('hole_number');
   if (error) return c.json({ error: error.message }, 500);
