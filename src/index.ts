@@ -41,6 +41,7 @@ app.get('/', c => c.json({
     'GET /v1/courses/:id/climate',
     'GET /v1/courses/:id/nearby',
     'GET /v1/courses/state/:code',
+    'POST /v1/moments  (open write — submit anonymized golfer moments; free API key required)',
   ],
   donate: 'https://opencollective.com/opengolfapi',
   api_keys: 'https://courses.opengolfapi.org/api-keys',
@@ -194,6 +195,57 @@ app.post('/v1/courses/submit', async c => {
     errors: results.filter((r: { success?: boolean; error?: string }) => r.error).length,
     results,
   });
+});
+
+// ── POST /v1/moments — OPEN WRITE: the moment layer's ingestion rail ──
+// Any app with a free API key writes anonymized golfer "moments" (breadcrumbs / shots /
+// pins / presence / conditions). They land in moment_staging as 'pending' and are
+// anonymized at ingest: client_id = the app's key id, NEVER a user identity. Downstream
+// AI-approval + aggregation promote accepted moments into the map (1m open / 1cm premium).
+// Insert-only via RLS; rate-limited by the global middleware. Devs read value back; the
+// inflow builds the planet-scale map. This is the keystone the whole flywheel hangs off.
+const MOMENT_TYPES = new Set(['breadcrumb', 'shot', 'pin', 'presence', 'condition', 'tee', 'green']);
+const MAX_MOMENT_BATCH = 2000;
+
+app.post('/v1/moments', async c => {
+  const apiKey = c.get('apiKey');
+  if (!apiKey) return c.json({ error: 'A free API key is required to write moments — https://courses.opengolfapi.org/api-keys' }, 401);
+
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid JSON' }, 400); }
+  const raw = Array.isArray(body) ? body : ((body as { moments?: unknown[] })?.moments ?? [body]);
+  if (!Array.isArray(raw) || raw.length === 0) return c.json({ error: 'send a moment, an array, or {moments:[...]}' }, 400);
+  if (raw.length > MAX_MOMENT_BATCH) return c.json({ error: `max ${MAX_MOMENT_BATCH} moments per request` }, 400);
+
+  const rows: Record<string, unknown>[] = [];
+  const rejected: { i: number; reason: string }[] = [];
+  (raw as Record<string, unknown>[]).forEach((m, i) => {
+    const lat = Number(m?.lat), lng = Number(m?.lng);
+    const type = String(m?.moment_type ?? '');
+    if (!MOMENT_TYPES.has(type)) { rejected.push({ i, reason: 'bad moment_type' }); return; }
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180) { rejected.push({ i, reason: 'bad lat/lng' }); return; }
+    if (!m?.recorded_at) { rejected.push({ i, reason: 'recorded_at required' }); return; }
+    const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : null);
+    // ANONYMIZE: only whitelisted fields; client_id = the app key, never user identity
+    rows.push({
+      course_id: m.course_id ?? null,
+      hole_number: num(m.hole_number),
+      moment_type: type,
+      lat, lng,
+      accuracy_m: num(m.accuracy_m),
+      altitude_m: num(m.altitude_m),
+      recorded_at: m.recorded_at,
+      lie: typeof m.lie === 'string' ? m.lie : null,
+      device: typeof m.device === 'string' ? m.device : null,
+      client_id: apiKey.id,
+      payload: m.payload && typeof m.payload === 'object' ? m.payload : null,
+    });
+  });
+
+  if (rows.length === 0) return c.json({ accepted: 0, rejected: rejected.length, errors: rejected }, 400);
+  const { error } = await client(c.env).from('moment_staging').insert(rows);
+  if (error) return c.json({ error: error.message }, 500);
+  return c.json({ accepted: rows.length, rejected: rejected.length, errors: rejected.slice(0, 20), status: 'pending_review' });
 });
 
 // Top-level error handler. Forwards uncaught errors to Sentry (when DSN is
