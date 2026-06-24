@@ -12,8 +12,9 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          PATHS=$(git ls-files | grep -iE '(^|/)geo/pipeline/|\.(pt|pth|onnx|safetensors)$|(^|/)routes/geo\.ts$|detect_sweep|fairway_tracer|shot_placement|green_router|green_locator|hole_geometry|geometry_package|route_solver|smp_resnet' || true)
-          MARK=$(grep -rIlE 'smp_resnet34|detect_sweep|fairway_tracer|shot_placement|OpenGolfGeo internal' . --exclude-dir=.git 2>/dev/null || true)
+          # exclude .github so this workflow's own pattern strings don't self-match
+          PATHS=$(git ls-files | grep -v '^\.github/' | grep -iE '(^|/)geo/pipeline/|\.(pt|pth|onnx|safetensors)$|(^|/)routes/geo\.ts$|detect_sweep|fairway_tracer|shot_placement|green_router|green_locator|hole_geometry|geometry_package|route_solver|smp_resnet' || true)
+          MARK=$(grep -rIlE 'smp_resnet34|detect_sweep|fairway_tracer|shot_placement|OpenGolfGeo internal' . --exclude-dir=.git --exclude-dir=.github 2>/dev/null || true)
           if [ -n "${PATHS}${MARK}" ]; then
             echo "::error::Paid OpenGolfGeo content (recipe/model/geo-serving) detected in a PUBLIC repo — it must stay in the private monorepo."
             echo "paths:";   echo "$PATHS"
