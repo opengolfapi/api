@@ -1,0 +1,23 @@
+name: Leak Guard
+# Hard gate: this is a PUBLIC mirror. Fail CI if any paid OpenGolfGeo content
+# (the detection/tracing recipe, trained models, geo-serving route, shot engine)
+# ever appears here. That content lives ONLY in the private monorepo.
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Block paid OpenGolfGeo content
+        shell: bash
+        run: |
+          set -uo pipefail
+          PATHS=$(git ls-files | grep -iE '(^|/)geo/pipeline/|\.(pt|pth|onnx|safetensors)$|(^|/)routes/geo\.ts$|detect_sweep|fairway_tracer|shot_placement|green_router|green_locator|hole_geometry|geometry_package|route_solver|smp_resnet' || true)
+          MARK=$(grep -rIlE 'smp_resnet34|detect_sweep|fairway_tracer|shot_placement|OpenGolfGeo internal' . --exclude-dir=.git 2>/dev/null || true)
+          if [ -n "${PATHS}${MARK}" ]; then
+            echo "::error::Paid OpenGolfGeo content (recipe/model/geo-serving) detected in a PUBLIC repo — it must stay in the private monorepo."
+            echo "paths:";   echo "$PATHS"
+            echo "content:"; echo "$MARK"
+            exit 1
+          fi
+          echo "Leak guard clean — no paid geo content in this public repo."
