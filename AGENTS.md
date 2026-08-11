@@ -23,3 +23,4 @@ Node/TypeScript + Cloudflare Workers + Supabase
 - Always open a pull request; never push straight to the default branch. Other people and agents work in these repos.
 - Verify a claim against the running system before repeating it. A number in a doc without a date and a method is a rumour.
 - Match the surrounding code's style and conventions.
+- On start, read `.gstack/inbox.md` for messages and proposals from G-Stat (the cross-project advisor). Act on or reply to anything addressed to this repo.
